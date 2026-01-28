@@ -1,0 +1,15 @@
+{
+  "name": "kya-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Know Your Agent — on-chain identity for autonomous AI agents",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "clean": "npm run clean --workspaces"
+  },
+  "license": "MIT"
+}
