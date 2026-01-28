@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity 0.8.28;
 
 import {SchemaResolver} from "@ethereum-attestation-service/eas-contracts/contracts/resolver/SchemaResolver.sol";
 import {IEAS, Attestation} from "@ethereum-attestation-service/eas-contracts/contracts/IEAS.sol";
@@ -11,15 +11,23 @@ contract KYAIdentityResolver is SchemaResolver {
     mapping(address => bytes32) public agentToIdentity;
     mapping(address => bool) public authorizedAttesters;
     address public admin;
+    address public pendingAdmin;
     bool public whitelistEnabled;
 
     event IdentityRegistered(address indexed agent, bytes32 uid);
     event IdentityRevoked(address indexed agent, bytes32 uid);
+    event AttesterAdded(address indexed attester);
+    event AttesterRemoved(address indexed attester);
+    event WhitelistToggled(bool enabled);
+    event AdminTransferStarted(address indexed currentAdmin, address indexed pendingAdmin);
+    event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
 
     error UnauthorizedAttester();
     error AgentAlreadyRegistered();
     error InvalidOwnerAddress();
+    error InvalidAgentAddress();
     error OnlyAdmin();
+    error OnlyPendingAdmin();
 
     constructor(
         IEAS eas,
@@ -54,6 +62,11 @@ contract KYAIdentityResolver is SchemaResolver {
             attestation.data,
             (bytes32, address, address, bytes32, bytes32, uint64, uint8, bytes32)
         );
+
+        // Enforce agent is not zero address
+        if (agentAddress == address(0)) {
+            revert InvalidAgentAddress();
+        }
 
         // Enforce owner is not zero address
         if (ownerAddress == address(0)) {
@@ -93,13 +106,28 @@ contract KYAIdentityResolver is SchemaResolver {
 
     function addAuthorizedAttester(address attester) external onlyAdmin {
         authorizedAttesters[attester] = true;
+        emit AttesterAdded(attester);
     }
 
     function removeAuthorizedAttester(address attester) external onlyAdmin {
         authorizedAttesters[attester] = false;
+        emit AttesterRemoved(attester);
     }
 
     function setWhitelistEnabled(bool enabled) external onlyAdmin {
         whitelistEnabled = enabled;
+        emit WhitelistToggled(enabled);
+    }
+
+    function transferAdmin(address newAdmin) external onlyAdmin {
+        pendingAdmin = newAdmin;
+        emit AdminTransferStarted(admin, newAdmin);
+    }
+
+    function acceptAdmin() external {
+        if (msg.sender != pendingAdmin) revert OnlyPendingAdmin();
+        emit AdminTransferred(admin, pendingAdmin);
+        admin = pendingAdmin;
+        pendingAdmin = address(0);
     }
 }

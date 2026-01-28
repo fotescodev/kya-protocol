@@ -216,6 +216,46 @@ describe("KYAIdentityResolver", function () {
       attestParams(identitySchemaUID, agent.address, data)
     );
   });
+
+  it("should reject zero agent address", async function () {
+    const { eas, identitySchemaUID, owner, attester } =
+      await loadFixture(deployEASFixture);
+
+    const data = encodeIdentityData(ethers.ZeroAddress, owner.address);
+
+    await expect(
+      eas.connect(attester).attest(
+        attestParams(identitySchemaUID, ethers.ZeroAddress, data)
+      )
+    ).to.be.reverted;
+  });
+
+  it("should support 2-step admin transfer", async function () {
+    const { identityResolver, deployer, other } =
+      await loadFixture(deployEASFixture);
+
+    // Non-admin cannot transfer
+    await expect(
+      identityResolver.connect(other).transferAdmin(other.address)
+    ).to.be.reverted;
+
+    // Admin initiates transfer
+    await identityResolver.connect(deployer).transferAdmin(other.address);
+    expect(await identityResolver.pendingAdmin()).to.equal(other.address);
+
+    // Old admin is still admin
+    expect(await identityResolver.admin()).to.equal(deployer.address);
+
+    // Wrong account cannot accept
+    await expect(
+      identityResolver.connect(deployer).acceptAdmin()
+    ).to.be.reverted;
+
+    // Pending admin accepts
+    await identityResolver.connect(other).acceptAdmin();
+    expect(await identityResolver.admin()).to.equal(other.address);
+    expect(await identityResolver.pendingAdmin()).to.equal(ethers.ZeroAddress);
+  });
 });
 
 describe("KYACapabilityResolver", function () {
