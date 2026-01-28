@@ -8,3 +8,16 @@ coverage/
 .DS_Store
 *.log
 deployments/
+
+# Pencil design files
+*.pen
+
+# IDE / tool configs
+.specstory/
+.cursor/
+.windsurf/
+.gemini/
+.opencode/
+.codex/
+.agent/
+.claude/
