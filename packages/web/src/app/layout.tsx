@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Web3Provider } from "@/providers/Web3Provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -87,7 +88,7 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        {children}
+        <Web3Provider>{children}</Web3Provider>
       </body>
     </html>
   );

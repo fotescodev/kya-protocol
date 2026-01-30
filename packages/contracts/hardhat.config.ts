@@ -5,7 +5,11 @@ import "dotenv/config";
 
 // Handle private key with or without 0x prefix, trim whitespace
 // Only use if it's exactly 64 hex characters (32 bytes)
-const rawKey = process.env.DEPLOYER_PRIVATE_KEY?.trim().replace(/^0x/, "") || "";
+// Also handle case where key is 65 chars with leading 0
+let rawKey = process.env.DEPLOYER_PRIVATE_KEY?.trim().replace(/^0x/, "") || "";
+if (rawKey.length === 65 && rawKey.startsWith("0") && /^[0-9a-fA-F]+$/.test(rawKey)) {
+  rawKey = rawKey.slice(1);
+}
 const privateKey = rawKey.length === 64 && /^[0-9a-fA-F]+$/.test(rawKey) ? rawKey : "";
 
 const config: HardhatUserConfig = {
