@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "sync-schemas": "tsx scripts/sync-schemas.ts"
   },
   "peerDependencies": {
     "ethers": "^6.0.0"
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "ethers": "^6.13.0",
+    "tsx": "^4.7.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },

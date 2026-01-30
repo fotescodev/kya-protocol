@@ -256,6 +256,102 @@ describe("KYAIdentityResolver", function () {
     expect(await identityResolver.admin()).to.equal(other.address);
     expect(await identityResolver.pendingAdmin()).to.equal(ethers.ZeroAddress);
   });
+
+  it("should not affect existing attestations when whitelist is toggled", async function () {
+    const { eas, identityResolver, identitySchemaUID, agent, owner, attester, deployer } =
+      await loadFixture(deployEASFixture);
+
+    const data = encodeIdentityData(agent.address, owner.address);
+
+    // Create attestation while whitelist is disabled
+    const tx = await eas.connect(attester).attest(
+      attestParams(identitySchemaUID, agent.address, data)
+    );
+    const uid = await getUIDFromAttestTx(tx);
+
+    // Verify attestation exists
+    expect(await identityResolver.agentToIdentity(agent.address)).to.equal(uid);
+
+    // Enable whitelist
+    await identityResolver.connect(deployer).setWhitelistEnabled(true);
+
+    // Existing attestation should still be valid
+    expect(await identityResolver.agentToIdentity(agent.address)).to.equal(uid);
+
+    // Verify the attestation still exists in EAS and is not revoked
+    const attestation = await eas.getAttestation(uid);
+    expect(attestation.uid).to.equal(uid);
+    expect(attestation.revocationTime).to.equal(0n);
+
+    // Disable whitelist again
+    await identityResolver.connect(deployer).setWhitelistEnabled(false);
+
+    // Attestation still valid
+    expect(await identityResolver.agentToIdentity(agent.address)).to.equal(uid);
+  });
+
+  it("should overwrite pendingAdmin when transferAdmin is called twice", async function () {
+    const { identityResolver, deployer, attester, other } =
+      await loadFixture(deployEASFixture);
+
+    // First transfer initiation
+    await identityResolver.connect(deployer).transferAdmin(attester.address);
+    expect(await identityResolver.pendingAdmin()).to.equal(attester.address);
+
+    // Second transfer initiation overwrites the first
+    await identityResolver.connect(deployer).transferAdmin(other.address);
+    expect(await identityResolver.pendingAdmin()).to.equal(other.address);
+
+    // Original pending admin (attester) cannot accept
+    await expect(
+      identityResolver.connect(attester).acceptAdmin()
+    ).to.be.reverted;
+
+    // New pending admin (other) can accept
+    await identityResolver.connect(other).acceptAdmin();
+    expect(await identityResolver.admin()).to.equal(other.address);
+    expect(await identityResolver.pendingAdmin()).to.equal(ethers.ZeroAddress);
+  });
+
+  it("should not affect existing attestations when attester is removed", async function () {
+    const { eas, identityResolver, identitySchemaUID, agent, owner, attester, deployer } =
+      await loadFixture(deployEASFixture);
+
+    // Enable whitelist and authorize attester
+    await identityResolver.connect(deployer).setWhitelistEnabled(true);
+    await identityResolver.connect(deployer).addAuthorizedAttester(attester.address);
+
+    const data = encodeIdentityData(agent.address, owner.address);
+
+    // Create attestation while attester is authorized
+    const tx = await eas.connect(attester).attest(
+      attestParams(identitySchemaUID, agent.address, data)
+    );
+    const uid = await getUIDFromAttestTx(tx);
+
+    // Verify attestation exists
+    expect(await identityResolver.agentToIdentity(agent.address)).to.equal(uid);
+
+    // Remove attester from whitelist
+    await identityResolver.connect(deployer).removeAuthorizedAttester(attester.address);
+
+    // Existing attestation should still be valid
+    expect(await identityResolver.agentToIdentity(agent.address)).to.equal(uid);
+
+    // Verify the attestation still exists in EAS and is not revoked
+    const attestation = await eas.getAttestation(uid);
+    expect(attestation.uid).to.equal(uid);
+    expect(attestation.revocationTime).to.equal(0n);
+
+    // Removed attester cannot create new attestations
+    const [, , , , otherAgent] = await ethers.getSigners();
+    const newData = encodeIdentityData(otherAgent.address, owner.address);
+    await expect(
+      eas.connect(attester).attest(
+        attestParams(identitySchemaUID, otherAgent.address, newData)
+      )
+    ).to.be.reverted;
+  });
 });
 
 describe("KYACapabilityResolver", function () {
@@ -338,5 +434,105 @@ describe("KYACapabilityResolver", function () {
         attestParams(capabilitySchemaUID, agent.address, capData, identityUID)
       )
     ).to.be.reverted;
+  });
+
+  it("should reject capability referencing another capability instead of identity", async function () {
+    const { eas, capabilitySchemaUID, capabilityResolver, identityUID, agent, attester } =
+      await loadFixture(createIdentityFixture);
+
+    const capData = encodeCapabilityData();
+
+    // Create a valid capability referencing the identity
+    const tx = await eas.connect(attester).attest(
+      attestParams(capabilitySchemaUID, agent.address, capData, identityUID)
+    );
+    const firstCapabilityUID = await getUIDFromAttestTx(tx);
+
+    // Try to create a second capability referencing the first capability (not the identity)
+    // This should fail because the parent schema doesn't match identitySchemaUID
+    await expect(
+      eas.connect(attester).attest(
+        attestParams(capabilitySchemaUID, agent.address, capData, firstCapabilityUID)
+      )
+    ).to.be.revertedWithCustomError(capabilityResolver, "InvalidParentIdentity");
+  });
+
+  it("should accept multiple capabilities referencing the same identity", async function () {
+    const { eas, capabilitySchemaUID, identityUID, agent, attester } =
+      await loadFixture(createIdentityFixture);
+
+    // Create first capability with TRANSACT permission
+    const capData1 = ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "uint256", "address", "uint64", "uint64", "bytes32", "uint8"],
+      [
+        ethers.keccak256(ethers.toUtf8Bytes("cap-transact")),
+        1n, // TRANSACT permission
+        ethers.ZeroAddress,
+        BigInt(Math.floor(Date.now() / 1000)),
+        0n,
+        ethers.ZeroHash,
+        100,
+      ]
+    );
+
+    const tx1 = await eas.connect(attester).attest(
+      attestParams(capabilitySchemaUID, agent.address, capData1, identityUID)
+    );
+    const uid1 = await getUIDFromAttestTx(tx1);
+    expect(uid1).to.not.equal(ethers.ZeroHash);
+
+    // Create second capability with SIGN permission
+    const capData2 = ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "uint256", "address", "uint64", "uint64", "bytes32", "uint8"],
+      [
+        ethers.keccak256(ethers.toUtf8Bytes("cap-sign")),
+        2n, // SIGN permission
+        ethers.ZeroAddress,
+        BigInt(Math.floor(Date.now() / 1000)),
+        0n,
+        ethers.ZeroHash,
+        50,
+      ]
+    );
+
+    const tx2 = await eas.connect(attester).attest(
+      attestParams(capabilitySchemaUID, agent.address, capData2, identityUID)
+    );
+    const uid2 = await getUIDFromAttestTx(tx2);
+    expect(uid2).to.not.equal(ethers.ZeroHash);
+
+    // Create third capability with DELEGATE permission
+    const capData3 = ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "uint256", "address", "uint64", "uint64", "bytes32", "uint8"],
+      [
+        ethers.keccak256(ethers.toUtf8Bytes("cap-delegate")),
+        4n, // DELEGATE permission
+        ethers.ZeroAddress,
+        BigInt(Math.floor(Date.now() / 1000)),
+        0n,
+        ethers.ZeroHash,
+        75,
+      ]
+    );
+
+    const tx3 = await eas.connect(attester).attest(
+      attestParams(capabilitySchemaUID, agent.address, capData3, identityUID)
+    );
+    const uid3 = await getUIDFromAttestTx(tx3);
+    expect(uid3).to.not.equal(ethers.ZeroHash);
+
+    // Verify all three UIDs are unique
+    expect(uid1).to.not.equal(uid2);
+    expect(uid2).to.not.equal(uid3);
+    expect(uid1).to.not.equal(uid3);
+
+    // Verify all attestations reference the same identity
+    const attestation1 = await eas.getAttestation(uid1);
+    const attestation2 = await eas.getAttestation(uid2);
+    const attestation3 = await eas.getAttestation(uid3);
+
+    expect(attestation1.refUID).to.equal(identityUID);
+    expect(attestation2.refUID).to.equal(identityUID);
+    expect(attestation3.refUID).to.equal(identityUID);
   });
 });

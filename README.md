@@ -249,6 +249,23 @@ The deploy script will:
 - **2-step admin transfer** — admin privileges require `transferAdmin` + `acceptAdmin` to prevent accidental transfers
 - **Parent validation** — capabilities are rejected if the referenced identity is revoked or expired
 
+### Permissionless Mode Considerations
+
+When `whitelistEnabled=false` on the `KYAIdentityResolver`, anyone can create identity attestations. This permissionless mode carries important risks:
+
+**Risks:**
+- **Spam attestations** — Malicious actors can flood the system with garbage attestations, consuming on-chain storage and indexer resources
+- **Agent address squatting** — Bad actors may claim agent addresses before legitimate owners, blocking future registrations (since one identity per agent is enforced)
+- **DoS via mapping pollution** — Excessive attestations can degrade lookup performance and increase costs for legitimate users
+
+**Mitigations:**
+- Keep `whitelistEnabled=true` for production deployments
+- Only whitelist trusted attesters who have been vetted
+- Implement rate limiting at the application layer (e.g., in your backend or SDK wrapper)
+- Monitor attestation patterns for suspicious activity
+
+**Recommendation:** Always enable the attester whitelist for mainnet deployments. Permissionless mode should only be used for testing or controlled environments.
+
 ### Reporting Vulnerabilities
 
 This is alpha software. **Do not use in production.**

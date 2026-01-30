@@ -1,6 +1,12 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "hardhat-gas-reporter";
 import "dotenv/config";
+
+// Handle private key with or without 0x prefix, trim whitespace
+// Only use if it's exactly 64 hex characters (32 bytes)
+const rawKey = process.env.DEPLOYER_PRIVATE_KEY?.trim().replace(/^0x/, "") || "";
+const privateKey = rawKey.length === 64 && /^[0-9a-fA-F]+$/.test(rawKey) ? rawKey : "";
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -25,10 +31,18 @@ const config: HardhatUserConfig = {
     baseSepolia: {
       url: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
       chainId: 84532,
-      accounts: process.env.DEPLOYER_PRIVATE_KEY
-        ? [process.env.DEPLOYER_PRIVATE_KEY]
-        : [],
+      accounts: privateKey ? [privateKey] : [],
     },
+  },
+  gasReporter: {
+    enabled: process.env.REPORT_GAS === "true",
+    currency: "USD",
+    L2: "base",
+    L2Etherscan: process.env.BASESCAN_API_KEY,
+    coinmarketcap: process.env.COINMARKETCAP_API_KEY,
+    reportFormat: "terminal",
+    showMethodSig: true,
+    showTimeSpent: true,
   },
 };
 

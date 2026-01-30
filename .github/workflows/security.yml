@@ -1,0 +1,62 @@
+name: Security Analysis
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/contracts/**'
+  pull_request:
+    paths:
+      - 'packages/contracts/**'
+
+jobs:
+  slither:
+    name: Slither Static Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: packages/contracts
+
+      - name: Compile contracts
+        run: npm run compile
+        working-directory: packages/contracts
+
+      - name: Run Slither
+        uses: crytic/slither-action@v0.4.0
+        id: slither
+        with:
+          target: packages/contracts
+          sarif: results.sarif
+          fail-on: high
+          slither-args: --filter-paths "node_modules|test" --exclude-dependencies
+
+      - name: Upload Slither SARIF report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slither-sarif-report
+          path: results.sarif
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
